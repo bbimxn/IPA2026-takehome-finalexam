@@ -1,6 +1,7 @@
 import ipaddress
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -76,27 +77,43 @@ def _run_playbook(variables):
 
     raise RuntimeError("Ansible playbook failed")
 
+
 def apply_interface(
     router,
     desired_interface,
     run_playbook=None,
 ):
-    """Apply complete desired interface state using Ansible."""
     try:
+        if not isinstance(desired_interface, dict):
+            return _error("backend_failed")
+
         name = desired_interface["name"]
         description = desired_interface["description"]
-        desired_ipv4 = ipaddress.IPv4Interface(
-            desired_interface["ipv4"]
-        )
+        ipv4_value = desired_interface["ipv4"]
         admin_state = desired_interface["admin_state"]
 
-        if not isinstance(name, str) or not name.strip():
+        # Only allow Loopback followed by digits.
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"Loopback\d+", name) is None
+        ):
             return _error("backend_failed")
 
         if not isinstance(description, str):
             return _error("backend_failed")
 
-        if admin_state not in ("up", "down"):
+        if not isinstance(ipv4_value, str):
+            return _error("backend_failed")
+
+        desired_ipv4 = ipaddress.IPv4Interface(ipv4_value)
+
+        if not isinstance(admin_state, str) or admin_state not in (
+            "up",
+            "down",
+        ):
+            return _error("backend_failed")
+
+        if not isinstance(router, str) or not router:
             return _error("backend_failed")
 
         variables = {

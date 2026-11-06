@@ -12,6 +12,8 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 COPY ansible/ ./ansible/
+COPY tests/ ./tests/
+COPY sample-tests/ ./sample-tests/
 
 EXPOSE 8000
 CMD ["python", "-m", "app.webhook_server"]

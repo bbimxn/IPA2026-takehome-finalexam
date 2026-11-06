@@ -133,14 +133,22 @@ def _default_netmiko_get(router, interface_name):
     finally:
         if connection is not None:
             connection.disconnect()
-            
+
 def _default_netmiko_delete(router, interface_name):
+    normalized_name = _normalize_interface_name(interface_name)
+
+    if (
+        normalized_name is None
+        or re.fullmatch(r"Loopback\d+", normalized_name) is None
+    ):
+        raise ValueError("Invalid Loopback interface name")
+
     username, password = _router_credentials()
     connection = None
 
     try:
         connection = ConnectHandler(
-            device_type="cisco_ios",
+            deviaace_type="cisco_ios",
             host=router,
             username=username,
             password=password,
@@ -150,7 +158,7 @@ def _default_netmiko_delete(router, interface_name):
         )
 
         output = connection.send_config_set(
-            [f"no interface {interface_name}"]
+            [f"no interface {normalized_name}"]
         )
 
         if not isinstance(output, str):
@@ -179,7 +187,7 @@ def get_interface_state(
     interface_name,
     netmiko_get=None,
 ):
-    """Return normalized interface status using Netmiko + TextFSM."""
+    
     normalized_name = _normalize_interface_name(interface_name)
 
     if normalized_name is None:
@@ -285,10 +293,13 @@ def delete_interface(
     interface_name,
     netmiko_delete=None,
 ):
-    """Delete an interface using Netmiko."""
+    
     normalized_name = _normalize_interface_name(interface_name)
 
-    if normalized_name is None or not normalized_name.startswith("Loopback"):
+    if (
+        normalized_name is None
+        or re.fullmatch(r"Loopback\d+", normalized_name) is None
+    ):
         return _error("backend_failed")
 
     # Public tests inject a fake delete operation.
@@ -311,7 +322,7 @@ def delete_interface(
         return _error("backend_failed")
 
     # Check whether the interface already exists.
-    current = get_interface_state(router, interface_name)
+    current = get_interface_state(router, normalized_name)
 
     if current.get("status") == "error":
         return current
@@ -324,7 +335,7 @@ def delete_interface(
 
     # Delete the existing interface.
     try:
-        result = _default_netmiko_delete(router, interface_name)
+        result = _default_netmiko_delete(router, normalized_name)
     except Exception as exc:
         return _map_exception(exc)
 
@@ -332,7 +343,7 @@ def delete_interface(
         return _error("backend_failed")
 
     # Verify the deletion using the existing status path.
-    verification = get_interface_state(router, interface_name)
+    verification = get_interface_state(router, normalized_name)
 
     if verification.get("status") == "error":
         return verification

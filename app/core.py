@@ -1,3 +1,4 @@
+import ipaddress
 import yaml
 
 ALLOWED_ROUTERS = {
@@ -22,12 +23,12 @@ def validate_request(data):
     Return a response dictionary according to
     specs/response-spec-v1.md.
     """
-    # TODO: implement
     if not isinstance(data, dict):
         return {"status": "error", "result": "invalid_yaml"}
 
-    # Validate version first.
+    # Validate version.
     version = data.get("version")
+
     if type(version) is not int or version != 1:
         return {"status": "error", "result": "invalid_version"}
 
@@ -36,6 +37,7 @@ def validate_request(data):
         return {"status": "error", "result": "missing_router"}
 
     router = data["router"]
+
     if not isinstance(router, str) or router not in ALLOWED_ROUTERS:
         return {"status": "error", "result": "invalid_router"}
 
@@ -44,6 +46,7 @@ def validate_request(data):
         return {"status": "error", "result": "missing_method"}
 
     method = data["method"]
+
     if not isinstance(method, str) or method not in METHOD_ACTIONS:
         return {"status": "error", "result": "invalid_method"}
 
@@ -52,17 +55,20 @@ def validate_request(data):
         return {"status": "error", "result": "missing_action"}
 
     action = data["action"]
+
     if not isinstance(action, str):
         return {"status": "error", "result": "invalid_action"}
 
     if action not in METHOD_ACTIONS[method]:
         return {"status": "error", "result": "invalid_action"}
 
-    # Validate desired.interface.
+    # Validate desired.
     if "desired" not in data or not isinstance(data["desired"], dict):
         return {"status": "error", "result": "missing_desired"}
 
     desired = data["desired"]
+
+    # Validate interface.
     if (
         "interface" not in desired
         or not isinstance(desired["interface"], dict)
@@ -80,26 +86,53 @@ def validate_request(data):
 
     # plan and apply require all desired interface fields.
     if action in {"plan", "apply"}:
-        for field, error_code in (
-            ("ipv4", "missing_ipv4"),
-            ("description", "missing_description"),
-            ("admin_state", "missing_admin_state"),
+
+        # Validate IPv4.
+        ipv4 = interface.get("ipv4")
+
+        if (
+            not isinstance(ipv4, str)
+            or not ipv4.strip()
         ):
-            value = interface.get(field)
+            return {
+                "status": "error",
+                "result": "missing_ipv4",
+            }
 
-            if value is None or (
-                isinstance(value, str) and not value.strip()
-            ):
-                return {"status": "error", "result": error_code}
+        # Validate description.
+        description = interface.get("description")
 
-        if interface["admin_state"] not in ("up", "down"):
+        if (
+            not isinstance(description, str)
+            or not description.strip()
+        ):
+            return {
+                "status": "error",
+                "result": "missing_description",
+            }
+
+        # Validate admin state.
+        admin_state = interface.get("admin_state")
+
+        if (
+            not isinstance(admin_state, str)
+            or admin_state not in ("up", "down")
+        ):
             return {
                 "status": "error",
                 "result": "invalid_admin_state",
             }
 
-    return {"status": "ok", "result": "accepted"}
+        # Validate IPv4 format.
+        try:
+            ipaddress.IPv4Interface(ipv4)
+        except (ValueError, TypeError):
+            return {
+                "status": "error",
+                "result": "missing_ipv4",
+            }
 
+    return {"status": "ok", "result": "accepted"}
 
 def process_request_file(path):
     """
