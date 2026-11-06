@@ -1,0 +1,12 @@
+fixture: 07-update-ipv4-and-admin-state.yaml
+expected:
+  status: ok
+  result: planned
+  operation: update
+  changes:
+    ipv4:
+      from: 172.20.70.102/32
+      to: 172.20.70.103/32
+    admin_state:
+      from: up
+      to: down
