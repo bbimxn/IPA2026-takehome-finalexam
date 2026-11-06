@@ -51,6 +51,7 @@ def _default_http_get(url):
             "Accept": "application/yang-data+json",
         },
         timeout=10,
+        verify=False,
     )
 
 
@@ -64,6 +65,7 @@ def _default_http_put(url, json):
             "Content-Type": "application/yang-data+json",
         },
         timeout=10,
+        verify=False,
     )
     
 def get_interface_state(

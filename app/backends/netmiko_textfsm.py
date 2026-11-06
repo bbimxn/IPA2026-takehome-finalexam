@@ -81,6 +81,33 @@ def _default_netmiko_get(router, interface_name):
             banner_timeout=10,
         )
 
+        # Check whether the interface exists first.
+        interfaces = connection.send_command(
+            "show ip interface brief",
+            use_textfsm=True,
+        )
+
+        if not isinstance(interfaces, list):
+            raise RuntimeError(
+                "Unexpected TextFSM interface brief output"
+            )
+
+        normalized_name = _normalize_interface_name(interface_name)
+
+        matching = [
+            item
+            for item in interfaces
+            if isinstance(item, dict)
+            and _normalize_interface_name(
+                item.get("interface")
+            ) == normalized_name
+        ]
+
+        # Return empty results when the interface does not exist.
+        if not matching:
+            return [], []
+
+        # Read detailed information only when the interface exists.
         ip_info = connection.send_command(
             f"show ip interface {interface_name}",
             use_textfsm=True,
@@ -92,18 +119,21 @@ def _default_netmiko_get(router, interface_name):
         )
 
         if not isinstance(ip_info, list):
-            raise RuntimeError("Unexpected TextFSM IP-interface output")
+            raise RuntimeError(
+                "Unexpected TextFSM IP-interface output"
+            )
 
         if not isinstance(descriptions, list):
-            raise RuntimeError("Unexpected TextFSM description output")
+            raise RuntimeError(
+                "Unexpected TextFSM description output"
+            )
 
         return ip_info, descriptions
 
     finally:
         if connection is not None:
             connection.disconnect()
-
-
+            
 def _default_netmiko_delete(router, interface_name):
     username, password = _router_credentials()
     connection = None
@@ -192,7 +222,7 @@ def get_interface_state(
             break
 
     if matching_interface is None:
-        return _error("backend_failed")
+        return _not_found()
 
     try:
         ip_addresses = matching_interface["ip_address"]
