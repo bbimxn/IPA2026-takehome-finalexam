@@ -1,4 +1,5 @@
 import ipaddress
+import logging
 import os
 import re
 from xml.etree import ElementTree as ET
@@ -7,6 +8,8 @@ from xml.sax.saxutils import escape
 from ncclient import manager
 
 from .planning import plan_interface as _build_backend_plan
+
+logger = logging.getLogger(__name__)
 
 
 NETCONF_NS = "urn:ietf:params:xml:ns:netconf:base:1.0"
@@ -25,6 +28,10 @@ def _error(result):
 
 
 def _transport_error(exc):
+    logger.warning(
+        "NETCONF transport error: %s: %s", type(exc).__name__, exc
+    )
+
     error_type = type(exc).__name__.lower()
 
     if (
@@ -55,7 +62,41 @@ def _router_credentials():
     return username, password
 
 
+# The shared lab router can be slow while many students are graded.
+_NETCONF_TIMEOUT = 30
+
+
+def _with_retry(call, attempts=2):
+    """Retry once when the failure is a connection-type error."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return call()
+        except Exception as exc:
+            transient = (
+                _transport_error(exc)["result"] == "connection_failed"
+            )
+
+            if attempt == attempts or not transient:
+                raise
+
+            logger.warning(
+                "NETCONF attempt %s/%s failed; retrying", attempt, attempts
+            )
+
+
 def _default_netconf_get_config(router, filter_xml):
+    return _with_retry(
+        lambda: _netconf_get_config_once(router, filter_xml)
+    )
+
+
+def _default_netconf_edit_config(router, config_xml):
+    return _with_retry(
+        lambda: _netconf_edit_config_once(router, config_xml)
+    )
+
+
+def _netconf_get_config_once(router, filter_xml):
     username, password = _router_credentials()
 
     with manager.connect(
@@ -63,7 +104,7 @@ def _default_netconf_get_config(router, filter_xml):
         port=830,
         username=username,
         password=password,
-        timeout=10,
+        timeout=_NETCONF_TIMEOUT,
         hostkey_verify=False,
         look_for_keys=False,
         allow_agent=False,
@@ -76,7 +117,7 @@ def _default_netconf_get_config(router, filter_xml):
         return reply.data_xml
 
 
-def _default_netconf_edit_config(router, config_xml):
+def _netconf_edit_config_once(router, config_xml):
     username, password = _router_credentials()
 
     with manager.connect(
@@ -84,7 +125,7 @@ def _default_netconf_edit_config(router, config_xml):
         port=830,
         username=username,
         password=password,
-        timeout=10,
+        timeout=_NETCONF_TIMEOUT,
         hostkey_verify=False,
         look_for_keys=False,
         allow_agent=False,

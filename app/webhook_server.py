@@ -119,6 +119,8 @@ class WebexEventHandler:
                 "result": "backend_failed",
             }
 
+        logging.info("Reply to room %s: %s", room_id, json.dumps(result))
+
         self.client.send_message(
             room_id,
             json.dumps(result),

@@ -1,4 +1,5 @@
 import ipaddress
+import logging
 import os
 import re
 
@@ -7,6 +8,9 @@ from netmiko.exceptions import (
     NetmikoAuthenticationException,
     NetmikoTimeoutException,
 )
+
+logger = logging.getLogger(__name__)
+
 
 def _error(result):
     return {
@@ -36,6 +40,10 @@ def _normalize_interface_name(name):
 
 
 def _map_exception(exc):
+    logger.warning(
+        "Netmiko error: %s: %s", type(exc).__name__, exc
+    )
+
     if isinstance(
         exc,
         (PermissionError, NetmikoAuthenticationException),
@@ -66,25 +74,47 @@ def _router_credentials():
     return username, password
 
 
+def _connect(router, username, password, attempts=2):
+    """Open an SSH session; retry once on a timeout / network error.
+
+    The shared lab router can be slow while many students are graded, so the
+    timeouts are longer than the library defaults.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return ConnectHandler(
+                device_type="cisco_ios",
+                host=router,
+                username=username,
+                password=password,
+                conn_timeout=20,
+                auth_timeout=20,
+                banner_timeout=30,
+            )
+        except (NetmikoTimeoutException, OSError) as exc:
+            if attempt == attempts:
+                raise
+            logger.warning(
+                "Netmiko connect attempt %s/%s failed (%s: %s); retrying",
+                attempt,
+                attempts,
+                type(exc).__name__,
+                exc,
+            )
+
+
 def _default_netmiko_get(router, interface_name):
     username, password = _router_credentials()
     connection = None
 
     try:
-        connection = ConnectHandler(
-            device_type="cisco_ios",
-            host=router,
-            username=username,
-            password=password,
-            conn_timeout=10,
-            auth_timeout=10,
-            banner_timeout=10,
-        )
+        connection = _connect(router, username, password)
 
         # Check whether the interface exists first.
         interfaces = connection.send_command(
             "show ip interface brief",
             use_textfsm=True,
+            read_timeout=30,
         )
 
         if not isinstance(interfaces, list):
@@ -111,11 +141,13 @@ def _default_netmiko_get(router, interface_name):
         ip_info = connection.send_command(
             f"show ip interface {interface_name}",
             use_textfsm=True,
+            read_timeout=30,
         )
 
         descriptions = connection.send_command(
             "show interfaces description",
             use_textfsm=True,
+            read_timeout=30,
         )
 
         if not isinstance(ip_info, list):
@@ -147,15 +179,7 @@ def _default_netmiko_delete(router, interface_name):
     connection = None
 
     try:
-        connection = ConnectHandler(
-            device_type="cisco_ios",
-            host=router,
-            username=username,
-            password=password,
-            conn_timeout=10,
-            auth_timeout=10,
-            banner_timeout=10,
-        )
+        connection = _connect(router, username, password)
 
         output = connection.send_config_set(
             [f"no interface {normalized_name}"]

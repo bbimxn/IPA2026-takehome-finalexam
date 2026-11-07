@@ -1,9 +1,12 @@
 import ipaddress
+import logging
 import os
 
 import requests
 
 from .planning import plan_interface as _build_backend_plan
+
+logger = logging.getLogger(__name__)
 
 
 def _error(result):
@@ -14,6 +17,10 @@ def _error(result):
 
 
 def _transport_error(exc):
+    logger.warning(
+        "RESTCONF transport error: %s: %s", type(exc).__name__, exc
+    )
+
     if isinstance(exc, PermissionError):
         return _error("authentication_failed")
 
@@ -43,29 +50,62 @@ def _router_auth():
     return username, password
 
 
+# (connect timeout, read timeout): the shared lab router can be slow to answer
+# while many students are being graded, so allow it more time to respond.
+_HTTP_TIMEOUT = (10, 30)
+
+
+def _with_retry(call, attempts=2):
+    """Retry once on a timeout / connection error, then re-raise."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return call()
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as exc:
+            if attempt == attempts:
+                raise
+            logger.warning(
+                "RESTCONF attempt %s/%s failed (%s: %s); retrying",
+                attempt,
+                attempts,
+                type(exc).__name__,
+                exc,
+            )
+
+
 def _default_http_get(url):
-    return requests.get(
-        url,
-        auth=_router_auth(),
-        headers={
-            "Accept": "application/yang-data+json",
-        },
-        timeout=10,
-        verify=False,
+    auth = _router_auth()
+
+    return _with_retry(
+        lambda: requests.get(
+            url,
+            auth=auth,
+            headers={
+                "Accept": "application/yang-data+json",
+            },
+            timeout=_HTTP_TIMEOUT,
+            verify=False,
+        )
     )
 
 
 def _default_http_put(url, json):
-    return requests.put(
-        url,
-        json=json,
-        auth=_router_auth(),
-        headers={
-            "Accept": "application/yang-data+json",
-            "Content-Type": "application/yang-data+json",
-        },
-        timeout=10,
-        verify=False,
+    auth = _router_auth()
+
+    return _with_retry(
+        lambda: requests.put(
+            url,
+            json=json,
+            auth=auth,
+            headers={
+                "Accept": "application/yang-data+json",
+                "Content-Type": "application/yang-data+json",
+            },
+            timeout=_HTTP_TIMEOUT,
+            verify=False,
+        )
     )
     
 def get_interface_state(

@@ -1,9 +1,13 @@
 import ipaddress
 import json
+import logging
 import os
 import re
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 
 def _error(result):
     return {
@@ -48,7 +52,14 @@ def _run_playbook(variables):
     if completed.returncode == 0:
         return
 
-    output = f"{completed.stdout}\n{completed.stderr}".lower()
+    raw_output = f"{completed.stdout}\n{completed.stderr}"
+    output = raw_output.lower()
+
+    logger.warning(
+        "ansible-playbook failed (rc=%s). Output tail:\n%s",
+        completed.returncode,
+        raw_output.strip()[-1500:],
+    )
 
     authentication_markers = (
         "authentication failed",
@@ -60,19 +71,26 @@ def _run_playbook(variables):
     )
 
     connection_markers = (
-        "unreachable",
         "connection refused",
         "timed out",
-        "timeout",
         "no route to host",
         "failed to connect to the host",
         "ssh connection failed",
+        "network is unreachable",
+        "host unreachable",
+    )
+
+    host_unreachable = (
+        "unreachable!" in output
+        or re.search(r"unreachable=[1-9]", output) is not None
     )
 
     if any(marker in output for marker in authentication_markers):
         raise PermissionError("Ansible authentication failed")
 
-    if any(marker in output for marker in connection_markers):
+    if host_unreachable or any(
+        marker in output for marker in connection_markers
+    ):
         raise ConnectionError("Ansible router connection failed")
 
     raise RuntimeError("Ansible playbook failed")
