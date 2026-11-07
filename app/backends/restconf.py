@@ -110,8 +110,7 @@ def get_interface_state(
         interface = payload["ietf-interfaces:interface"]
 
         name = interface["name"]
-        enabled = interface["enabled"]
-        addresses = interface["ietf-ip:ipv4"]["address"]
+        enabled = interface.get("enabled", True)
 
         if not isinstance(name, str):
             return _error("backend_failed")
@@ -119,16 +118,21 @@ def get_interface_state(
         if not isinstance(enabled, bool):
             return _error("backend_failed")
 
-        if not isinstance(addresses, list) or not addresses:
+        # interface ที่ยังไม่มี IPv4 ถือว่า ipv4 = None (ไม่ใช่ backend_failed)
+        ipv4_block = interface.get("ietf-ip:ipv4") or {}
+        addresses = ipv4_block.get("address") or []
+
+        if not isinstance(addresses, list):
             return _error("backend_failed")
 
-        address = addresses[0]
-
-        ipv4 = str(
-            ipaddress.IPv4Interface(
-                f"{address['ip']}/{address['netmask']}"
+        ipv4 = None
+        if addresses:
+            address = addresses[0]
+            ipv4 = str(
+                ipaddress.IPv4Interface(
+                    f"{address['ip']}/{address['netmask']}"
+                )
             )
-        )
 
         description = interface.get("description")
 

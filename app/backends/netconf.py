@@ -64,10 +64,13 @@ def _default_netconf_get_config(router, filter_xml):
         username=username,
         password=password,
         timeout=10,
+        hostkey_verify=False,
+        look_for_keys=False,
+        allow_agent=False,
     ) as session:
         reply = session.get_config(
             source="running",
-            filter=filter_xml,
+            filter=("subtree", filter_xml),
         )
 
         return reply.data_xml
@@ -82,6 +85,9 @@ def _default_netconf_edit_config(router, config_xml):
         username=username,
         password=password,
         timeout=10,
+        hostkey_verify=False,
+        look_for_keys=False,
+        allow_agent=False,
     ) as session:
         session.edit_config(
             target="running",
@@ -160,41 +166,45 @@ def get_interface_state(
             f"{{{IETF_IP_NS}}}ipv4"
         )
 
+        if name_element is None:
+            return _error("backend_failed")
+
+        # ไม่มี <enabled> ถือว่า up; ถ้ามีต้องเป็น true/false
         if (
-            name_element is None
-            or enabled_element is None
-            or ipv4_element is None
-            or enabled_element.text not in ("true", "false")
+            enabled_element is not None
+            and enabled_element.text not in ("true", "false")
         ):
             return _error("backend_failed")
 
-        address_element = ipv4_element.find(
-            f"{{{IETF_IP_NS}}}address"
+        # interface ที่ยังไม่มี IPv4 ถือว่า ipv4 = None (ไม่ใช่ backend_failed)
+        ipv4 = None
+        address_element = (
+            ipv4_element.find(f"{{{IETF_IP_NS}}}address")
+            if ipv4_element is not None
+            else None
         )
 
-        if address_element is None:
-            return _error("backend_failed")
-
-        ip_element = address_element.find(
-            f"{{{IETF_IP_NS}}}ip"
-        )
-        mask_element = address_element.find(
-            f"{{{IETF_IP_NS}}}netmask"
-        )
-
-        if (
-            ip_element is None
-            or mask_element is None
-            or not ip_element.text
-            or not mask_element.text
-        ):
-            return _error("backend_failed")
-
-        ipv4 = str(
-            ipaddress.IPv4Interface(
-                f"{ip_element.text}/{mask_element.text}"
+        if address_element is not None:
+            ip_element = address_element.find(
+                f"{{{IETF_IP_NS}}}ip"
             )
-        )
+            mask_element = address_element.find(
+                f"{{{IETF_IP_NS}}}netmask"
+            )
+
+            if (
+                ip_element is None
+                or mask_element is None
+                or not ip_element.text
+                or not mask_element.text
+            ):
+                return _error("backend_failed")
+
+            ipv4 = str(
+                ipaddress.IPv4Interface(
+                    f"{ip_element.text}/{mask_element.text}"
+                )
+            )
 
         description = (
             description_element.text
@@ -219,7 +229,10 @@ def get_interface_state(
             "ipv4": ipv4,
             "description": description,
             "admin_state": (
-                "up" if enabled_element.text == "true" else "down"
+                "down"
+                if enabled_element is not None
+                and enabled_element.text == "false"
+                else "up"
             ),
         },
     }

@@ -148,7 +148,7 @@ def _default_netmiko_delete(router, interface_name):
 
     try:
         connection = ConnectHandler(
-            deviaace_type="cisco_ios",
+            device_type="cisco_ios",
             host=router,
             username=username,
             password=password,

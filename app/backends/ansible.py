@@ -38,7 +38,7 @@ def _run_playbook(variables):
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=120,
             check=False,
             env=os.environ.copy(),
         )
